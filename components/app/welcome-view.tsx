@@ -1,4 +1,9 @@
+'use client';
+
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/livekit/button';
+import { supabase } from '@/lib/supabase';
+import type { User } from '@supabase/supabase-js';
 
 function WelcomeImage() {
   return (
@@ -28,18 +33,120 @@ export const WelcomeView = ({
   onStartCall,
   ref,
 }: React.ComponentProps<'div'> & WelcomeViewProps) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Check current session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleSignIn = async () => {
+    // Use just the base callback URL - Supabase will add query params
+    // The base URL must be in Supabase's Redirect URLs allow list
+    const redirectTo = `${window.location.origin}/auth/callback`;
+    
+    console.log('=== OAuth Sign In Debug ===');
+    console.log('Current origin:', window.location.origin);
+    console.log('Redirect URL being sent:', redirectTo);
+    console.log('Full current URL:', window.location.href);
+    
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo,
+        // Don't include query params in redirectTo - Supabase will add them
+        queryParams: {
+          // We'll handle the 'next' redirect in the callback route
+        },
+      },
+    });
+    
+    if (error) {
+      console.error('OAuth Error:', error);
+      alert(`Sign in error: ${error.message}\n\nPlease check:\n1. ${redirectTo} is in Supabase Redirect URLs\n2. Site URL in Supabase matches this app's domain`);
+    } else if (data?.url) {
+      console.log('Supabase returned OAuth URL:', data.url);
+      console.log('This URL should redirect to Google, then back to:', redirectTo);
+      // The browser will automatically redirect
+    } else {
+      console.warn('No error, but no URL returned either');
+    }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+  };
+
+  const handleStartCall = () => {
+    if (!user) {
+      handleSignIn();
+      return;
+    }
+    onStartCall();
+  };
+
+  if (loading) {
+    return (
+      <div ref={ref}>
+        <section className="bg-background flex flex-col items-center justify-center text-center">
+          <WelcomeImage />
+          <p className="text-foreground max-w-prose pt-1 leading-6 font-medium">
+            Loading...
+          </p>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div ref={ref}>
       <section className="bg-background flex flex-col items-center justify-center text-center">
         <WelcomeImage />
 
         <p className="text-foreground max-w-prose pt-1 leading-6 font-medium">
-          Chat live with your voice AI agent
+          {user
+            ? 'Chat live with your voice AI agent'
+            : 'Sign in with Google to start your interview'}
         </p>
 
-        <Button variant="primary" size="lg" onClick={onStartCall} className="mt-6 w-64 font-mono">
-          {startButtonText}
+        {user && (
+          <p className="text-muted-foreground text-sm mt-2">
+            Signed in as {user.email}
+          </p>
+        )}
+
+        <Button
+          variant="primary"
+          size="lg"
+          onClick={handleStartCall}
+          className="mt-6 w-64 font-mono"
+        >
+          {user ? startButtonText : 'Sign in with Google'}
         </Button>
+
+        {user && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleSignOut}
+            className="mt-4 text-sm"
+          >
+            Sign out
+          </Button>
+        )}
       </section>
 
       <div className="fixed bottom-5 left-0 flex w-full items-center justify-center">

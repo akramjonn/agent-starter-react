@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { AccessToken, type AccessTokenOptions, type VideoGrant } from 'livekit-server-sdk';
 import { RoomConfiguration } from '@livekit/protocol';
+import { createServerClient } from '@/lib/supabase';
+import { cookies } from 'next/headers';
 
 type ConnectionDetails = {
   serverUrl: string;
@@ -19,6 +21,18 @@ export const revalidate = 0;
 
 export async function POST(req: Request) {
   try {
+    // Check authentication
+    const { createServerClient } = await import('@/lib/supabase');
+    const supabase = await createServerClient();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return new NextResponse('Unauthorized', { status: 401 });
+    }
+
     if (LIVEKIT_URL === undefined) {
       throw new Error('LIVEKIT_URL is not defined');
     }
